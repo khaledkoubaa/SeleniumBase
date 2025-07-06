@@ -1,269 +1,238 @@
-# SeleniumBase: Scrolling & Element Extraction Cheat Sheet
+# SeleniumBase: CDP Mode Scrolling & Element Extraction Cheat Sheet
 
-This cheat sheet provides common methods and examples for scrolling web pages or specific elements, and then extracting data using SeleniumBase.
+This cheat sheet focuses on methods and examples for scrolling web pages or specific elements using **SeleniumBase CDP Mode**, and then extracting data.
 
-**Initial Setup (Standard Mode Example):**
-```python
-from seleniumbase import BaseCase
-BaseCase.main(__name__, __file__) # If running as pytest
+**Initial Setup (CDP Mode):**
 
-class MyScrollingTests(BaseCase):
-    def test_scrolling_and_extraction(self):
-        self.open("https://some-website-with-scrolling.com")
-        # ... scrolling and extraction logic below ...
-```
+*   **With Context Manager (Recommended for most cases):**
+    ```python
+    from seleniumbase import SB
 
-**Initial Setup (CDP Mode Example):**
-```python
-from seleniumbase import SB
+    with SB(uc=True) as sb: # uc=True is essential for CDP
+        sb.open("https://some-website-with-scrolling.com")
+        sb.activate_cdp_mode(sb.get_current_url()) # Activate CDP
+        # ... CDP scrolling and extraction logic below ...
+    # Browser closes automatically
+    ```
 
-with SB(uc=True) as sb: # Or sb = SB(uc=True) for manual quit
-    sb.open("https://some-website-with-scrolling.com")
-    # sb.activate_cdp_mode(sb.get_current_url()) # Optional, for CDP specific scrolling
-    # ... scrolling and extraction logic below ...
-```
+*   **Without Context Manager (Manual Browser Lifecycle):**
+    ```python
+    from seleniumbase import SB
 
-## 1. Scrolling the Main Page Window
+    sb = SB(uc=True) # uc=True is essential for CDP
+    try:
+        sb.open("https://some-website-with-scrolling.com")
+        sb.activate_cdp_mode(sb.get_current_url()) # Activate CDP
+        # ... CDP scrolling and extraction logic below ...
+        print("Script finished. Browser will remain open if sb.driver.quit() is not called.")
+    finally:
+        # pass  # To keep browser open
+        # Or, to close:
+        # if hasattr(sb, 'driver') and sb.driver:
+        #     sb.driver.quit()
+        pass # For this example, keep it open or manage manually
+    ```
+**Important:** Always call `sb.activate_cdp_mode()` after `sb.open()` or navigating to the page where you intend to use `sb.cdp.*` methods.
+
+## 1. Scrolling the Main Page Window (CDP Mode)
 
 **a. Scroll to Bottom of the Page:**
-
-*   **Standard Method:**
     ```python
-    self.scroll_to_bottom()
-    # Or to ensure it really gets there on dynamic pages:
-    self.slow_scroll_to_bottom()
-    ```
-*   **JavaScript (often reliable):**
-    ```python
-    self.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-    ```
-*   **CDP Mode:**
-    ```python
-    # sb.activate_cdp_mode(sb.get_current_url()) # If not already active
+    # Assumes sb is initialized and CDP mode is active
     sb.cdp.scroll_to_bottom()
+    sb.sleep(0.5) # Optional: short pause for content to settle
     ```
 
 **b. Scroll to a Specific Element:**
-
-*   **Standard Method (ensures element is in view):**
     ```python
-    self.scroll_to("footer#site-footer") # Scrolls to the element
-    self.wait_for_element_visible("footer#site-footer") # Good practice
-    ```
-*   **CDP Mode:**
-    ```python
-    # sb.activate_cdp_mode(sb.get_current_url())
-    sb.cdp.scroll_into_view("footer#site-footer")
+    # Assumes sb is initialized and CDP mode is active
+    target_selector = "footer#site-footer"
+    sb.cdp.scroll_into_view(target_selector)
+    sb.cdp.wait_for_element_visible(target_selector, timeout=5) # Good practice
     ```
 
 **c. Scroll by a Specific Amount (Pixels):**
-
-*   **Standard Method (JavaScript):**
     ```python
-    self.execute_script("window.scrollBy(0, 500);") # Scrolls down 500 pixels
-    self.execute_script("window.scrollBy(0, -200);") # Scrolls up 200 pixels
-    ```
-*   **CDP Mode:**
-    ```python
-    # sb.activate_cdp_mode(sb.get_current_url())
-    sb.cdp.scroll_down(500) # Scrolls down 500px
-    sb.cdp.scroll_up(200)   # Scrolls up 200px
+    # Assumes sb is initialized and CDP mode is active
+    sb.cdp.scroll_down(500)  # Scrolls down 500px
+    sb.sleep(0.3)
+    sb.cdp.scroll_up(200)    # Scrolls up 200px
     ```
 
-**d. Scroll an Element into the Middle of the Viewport:**
-*   **Standard Method:**
+## 2. Scrolling Within a Specific Scrollable Element (CDP Mode)
+
+Scrolling within a specific element (like a popup or a div with `overflow: scroll;`) using direct `sb.cdp.*` methods for sub-element scrolling is **less straightforward** than page scrolling. The `sb.cdp.scroll_into_view()` and `sb.cdp.scroll_down()` typically operate on the main viewport.
+
+**Strategies for CDP Mode:**
+
+*   **Focus and Keyboard Scroll (If Applicable):** If the scrollable element can receive focus and responds to keyboard arrow keys.
     ```python
-    self.scroll_into_view_center("div#target-div")
+    scrollable_container_selector = "div.popup-content-area"
+    sb.cdp.focus(scrollable_container_selector)
+    sb.sleep(0.1)
+    # Simulate pressing ArrowDown key (requires PyAutoGUI integration, often via sb.cdp.gui_press_keys)
+    # This is an advanced case; for simplicity, direct sb.cdp methods for this are limited.
+    # Example using a GUI-based approach if direct CDP scroll isn't working for the inner element:
+    # sb.cdp.gui_press_keys("\\ue015") # Example: ArrowDown key code
+    # This might be needed multiple times in a loop.
+    print(f"Note: Scrolling specific inner elements with only sb.cdp.* might require sb.cdp.evaluate() or GUI workarounds.")
     ```
 
-## 2. Scrolling Within a Specific Scrollable Element
-
-This applies to elements like popups, `<div>` tags with `overflow: scroll;` or `overflow: auto;`.
-
-**a. Identify the Scrollable Element:**
-First, you need the CSS selector for the scrollable container element itself.
-Example: `scrollable_div_selector = "div.popup-content-area"`
-
-**b. Scroll Scrollable Element to its Bottom:**
-
-*   **Standard Method (JavaScript):**
+*   **Using `sb.cdp.evaluate()` to execute JavaScript:** This is often the most reliable way to scroll specific sub-elements in CDP mode if direct CDP commands don't target them.
     ```python
+    # Assumes sb is initialized and CDP mode is active
     scrollable_selector = "div.my-scrollable-list"
-    # Ensure element is loaded
-    self.wait_for_element_present(scrollable_selector)
-    script = "arguments[0].scrollTop = arguments[0].scrollHeight;"
-    self.execute_script(script, scrollable_selector)
+    sb.cdp.wait_for_element_present(scrollable_selector) # Ensure container exists
+
+    # Scroll scrollable element to its bottom using JS
+    js_script_bottom = "document.querySelector(arguments[0]).scrollTop = document.querySelector(arguments[0]).scrollHeight;"
+    sb.cdp.evaluate(js_script_bottom % repr(scrollable_selector)) # repr() handles quotes
+    sb.sleep(0.5)
+
+    # Scroll scrollable element by a specific amount using JS
+    js_script_by_amount = "document.querySelector(arguments[0]).scrollTop += 200;"
+    sb.cdp.evaluate(js_script_by_amount % repr(scrollable_selector))
+    sb.sleep(0.5)
+
+    # Scroll to a specific inner element within the scrollable container using JS
+    inner_element_selector_js = "li#item-20-within-scrollable" # JS compatible selector
+    scrollable_container_js_selector = "div.my-scrollable-list" # JS compatible selector
+
+    # Ensure the inner element is queryable by JS before trying to scroll to it
+    # This JS tries to scroll the inner element into view within its scrollable parent
+    js_scroll_inner_into_view = f"""
+        var container = document.querySelector('{scrollable_container_js_selector}');
+        var element = container ? container.querySelector('{inner_element_selector_js}') : null;
+        if (element) {{
+            element.scrollIntoView({{ behavior: 'smooth', block: 'nearest', inline: 'nearest' }});
+            return true;
+        }}
+        return false;
+    """
+    scrolled_ok = sb.cdp.evaluate(js_scroll_inner_into_view)
+    if scrolled_ok:
+        sb.cdp.wait_for_element_visible(f"{scrollable_container_js_selector} {inner_element_selector_js}")
+    else:
+        print(f"Could not scroll inner element {inner_element_selector_js} into view using JS.")
     ```
+**Note:** For complex inner-element scrolling, direct JavaScript execution via `sb.cdp.evaluate()` is generally more robust in CDP mode than trying to adapt viewport-based CDP scroll commands.
 
-**c. Scroll Scrollable Element to a Specific Inner Element:**
-
-*   **Standard Method (JavaScript - more complex):**
-    This often involves calculating offsets or using `scrollIntoView` on the inner element *if the browser correctly contexts it to the scrollable parent*.
-    ```python
-    scrollable_container = "div#scroll-box"
-    inner_element = "div#scroll-box li:nth-child(20)"
-    self.wait_for_element_present(inner_element)
-    # Option 1: Try direct scrollIntoView (might scroll page too)
-    # self.scroll_to(inner_element) # This might scroll the whole page
-
-    # Option 2: More precise JS (can be tricky)
-    # Get the inner element with JS, then call scrollIntoView on it within its parent.
-    # This is highly dependent on page structure.
-    # A simpler SeleniumBase approach is often to repeatedly scroll the container down
-    # by a fixed amount until the inner element is visible.
-    script = "arguments[0].scrollIntoView();"
-    self.execute_script(script, inner_element) # May need adjustments
-    ```
-    A more robust SeleniumBase-centric way if direct JS is tricky:
-    ```python
-    scrollable_container = "div#scroll-box"
-    inner_element_selector = "div#scroll-box li#item-50"
-    while not self.is_element_visible(inner_element_selector):
-        self.execute_script("arguments[0].scrollTop += 100;", scrollable_container)
-        self.sleep(0.1) # Small pause to allow rendering
-        # Add a counter or timeout to prevent infinite loops
-        if self.is_element_visible(inner_element_selector): # Check again
-            break
-    self.assert_element_visible(inner_element_selector)
-    ```
-
-**d. Scroll Scrollable Element by a Specific Amount:**
-
-*   **Standard Method (JavaScript):**
-    ```python
-    scrollable_selector = "div.terms-and-conditions"
-    self.wait_for_element_present(scrollable_selector)
-    script = "arguments[0].scrollTop += 200;" # Scroll down by 200px
-    self.execute_script(script, scrollable_selector)
-    ```
-
-## 3. Handling Infinite Scroll / Lazy Loading
+## 3. Handling Infinite Scroll / Lazy Loading (CDP Mode)
 
 Pages that load more content as you scroll down require a loop.
 
-**Strategy:**
-1. Scroll down a bit.
-2. Wait for new content to load (e.g., check if the number of items increased or a loading spinner disappeared).
-3. If no new content loads after a few scrolls (or a specific "end" marker appears), assume you've reached the bottom.
-4. Extract all loaded elements.
+**Strategy (using CDP Mode):**
+1. Scroll down the main page (e.g., `sb.cdp.scroll_to_bottom()` or `sb.cdp.scroll_down(amount)`).
+2. Wait for new content (e.g., `sb.sleep()`, or `sb.cdp.wait_for_element_visible()` for a new item, or check item count).
+3. If no new content loads after a few scrolls, or an "end" marker appears, assume bottom.
+4. Extract all loaded elements using `sb.cdp.find_elements()`.
 
-*   **Standard Method Example:**
-    ```python
-    self.open("https://example.com/infinite-scroll-items")
+```python
+# Assumes sb is initialized and CDP mode is active
+sb.open("https://example.com/infinite-scroll-items")
+sb.activate_cdp_mode(sb.get_current_url()) # Ensure CDP is active
 
-    product_selector = "div.product-item"
-    initial_item_count = 0
-    no_new_content_strikes = 0
-    max_strikes = 3 # How many scrolls with no new items before stopping
+product_selector = "div.product-item" # CSS selector for the items
+initial_item_count = 0
+no_new_content_strikes = 0
+max_strikes = 3 # How many scrolls with no new items before stopping
 
-    while no_new_content_strikes < max_strikes:
-        self.scroll_to_bottom() # Or scroll by a fixed large amount
-        self.sleep(1.5) # Wait for content to potentially load
+print("Starting infinite scroll handling...")
+while no_new_content_strikes < max_strikes:
+    sb.cdp.scroll_to_bottom()
+    sb.sleep(1.5) # Wait for content to potentially load, adjust as needed
 
-        current_items = self.find_elements(product_selector)
-        current_item_count = len(current_items)
+    # Check for new items using CDP methods
+    current_items = sb.cdp.find_elements(product_selector)
+    current_item_count = len(current_items)
 
-        if current_item_count > initial_item_count:
-            print(f"Loaded {current_item_count} items...")
-            initial_item_count = current_item_count
-            no_new_content_strikes = 0 # Reset strikes
-        else:
-            no_new_content_strikes += 1
-            print(f"No new content loaded, strike {no_new_content_strikes}/{max_strikes}")
+    if current_item_count > initial_item_count:
+        print(f"Loaded {current_item_count} items...")
+        initial_item_count = current_item_count
+        no_new_content_strikes = 0 # Reset strikes
+    else:
+        no_new_content_strikes += 1
+        print(f"No new content detected, strike {no_new_content_strikes}/{max_strikes}")
 
-        # Optional: Check for an "end of results" message
-        if self.is_element_visible("p#no-more-results"):
-            print("Reached end of results marker.")
-            break
+    # Optional: Check for an "end of results" message using CDP
+    if sb.cdp.is_element_visible("p#no-more-results"):
+        print("Reached end of results marker.")
+        break
 
-    print(f"Finished scrolling. Total items found: {initial_item_count}")
-    # Now extract from all 'current_items' or re-fetch all elements
-    all_loaded_products = self.find_elements(product_selector)
-    for product in all_loaded_products:
-        print(product.text) # Or extract specific attributes
-    ```
+print(f"Finished scrolling. Total items found: {initial_item_count}")
+# Now extract from all 'current_items' or re-fetch all elements
+all_loaded_products = sb.cdp.find_elements(product_selector) # Re-fetch with CDP
+for product_element in all_loaded_products:
+    # product_element is a CDPWebElement
+    print(product_element.text) # Or extract specific attributes like product_element.get_attribute('data-id')
+```
 
-## 4. Extracting Elements After Scrolling
+## 4. Extracting Elements After Scrolling (CDP Mode)
 
-Once you've scrolled appropriately, element extraction is standard.
+Once you've scrolled, element extraction uses `sb.cdp.find_element()` or `sb.cdp.find_elements()`.
 
 **a. Extracting a Single Element:**
+    ```python
+    # Assumes sb is initialized and CDP mode is active
+    target_div_selector = "div#contact-info"
+    email_selector_within_div = "p.email" # Relative selector
+    phone_link_selector_within_div = "a.phone-link"
 
-*   **Standard Method:**
-    ```python
-    self.scroll_to("div#contact-info") # Ensure it's in view
-    email = self.get_text("div#contact-info p.email")
-    phone = self.get_attribute("div#contact-info a.phone-link", "href")
-    print(f"Email: {email}, Phone Link: {phone}")
-    ```
-*   **CDP Mode:**
-    ```python
-    # sb.activate_cdp_mode(sb.get_current_url())
-    sb.cdp.scroll_into_view("div#contact-info")
-    email = sb.cdp.get_text("div#contact-info p.email")
-    # For attributes with CDP, you might need to find element then get attribute
-    contact_element = sb.cdp.find_element("div#contact-info a.phone-link")
-    phone_link = contact_element.get_attribute("href") if contact_element else None
-    print(f"CDP Email: {email}, Phone Link: {phone_link}")
+    sb.cdp.scroll_into_view(target_div_selector) # Ensure parent is in view
+    sb.cdp.wait_for_element_visible(target_div_selector)
+
+    # Get text from a child element
+    email = sb.cdp.get_text(f"{target_div_selector} {email_selector_within_div}")
+
+    # Get attribute from a child element
+    phone_link_element = sb.cdp.find_element(f"{target_div_selector} {phone_link_selector_within_div}")
+    phone_href = phone_link_element.get_attribute("href") if phone_link_element else "N/A"
+
+    print(f"CDP Extracted Email: {email}, Phone Link: {phone_href}")
     ```
 
 **b. Extracting Multiple Elements:**
-
-*   **Standard Method:**
     ```python
-    self.scroll_to_bottom() # Ensure all are loaded/visible if not lazy-loaded
-    item_selector = "ul#item-list li.list-item"
-    self.wait_for_element_present(item_selector) # Wait for at least one
+    # Assumes sb is initialized and CDP mode is active
+    sb.cdp.scroll_to_bottom() # Ensure all are loaded/visible if not lazy-loaded
 
-    items = self.find_elements(item_selector)
-    all_item_texts = []
-    for item_element in items:
-        # Check visibility if items can be hidden but present in DOM
-        if item_element.is_displayed(): # Selenium WebElement property
-            all_item_texts.append(item_element.text)
-    print(f"Found items: {all_item_texts}")
-    ```
-*   **CDP Mode:**
-    ```python
-    # sb.activate_cdp_mode(sb.get_current_url())
-    sb.cdp.scroll_to_bottom()
     item_selector = "ul#item-list li.list-item"
-    # Wait for at least one element to be present/visible using CDP waits
-    sb.cdp.wait_for_element_visible(item_selector, timeout=5)
+    sb.cdp.wait_for_element_present(item_selector, timeout=5) # Wait for at least one
 
     cdp_elements = sb.cdp.find_elements(item_selector)
-    all_cdp_item_texts = []
+    all_item_texts = []
     for cdp_el in cdp_elements:
-        # CDP elements don't have is_displayed directly, visibility is often
-        # assumed if found by non-hidden selectors or checked with sb.cdp.is_element_visible(unique_selector_for_this_cdp_el)
-        all_cdp_item_texts.append(cdp_el.text) # Access .text property
-    print(f"CDP Found items: {all_cdp_item_texts}")
+        # cdp_el is a CDPWebElement
+        # Visibility check might be needed if items can be hidden but present in DOM
+        # For robust check: if sb.cdp.is_element_visible(unique_selector_for_cdp_el):
+        all_item_texts.append(cdp_el.text) # Access .text property
+    print(f"CDP Found items: {all_item_texts}")
     ```
 
 **c. Extracting from Stale Elements (After Scrolling/DOM Changes):**
-If the DOM changes significantly after scrolling (common with React/Vue/Angular apps), previously found `WebElement` objects can become stale.
-*   **Solution:** Re-fetch the elements after scrolling and any actions that might cause DOM re-renders.
+If the DOM changes significantly after scrolling, previously found `CDPWebElement` objects can become stale or point to the wrong underlying browser element.
+*   **Solution:** Re-fetch the elements using `sb.cdp.find_elements()` *after* scrolling and any actions that might cause DOM re-renders.
     ```python
-    self.scroll_to_bottom()
-    self.sleep(1) # Allow for any dynamic updates
+    # Assumes sb is initialized and CDP mode is active
+    sb.cdp.scroll_to_bottom()
+    sb.sleep(1) # Allow for any dynamic updates
+
     # Re-fetch elements INSTEAD of using previously found ones
-    updated_items = self.find_elements("div.product-tile")
-    for item in updated_items:
-        print(item.get_attribute("data-product-id"))
+    updated_item_selector = "div.product-tile"
+    updated_items = sb.cdp.find_elements(updated_item_selector)
+    for item_cdp_el in updated_items:
+        print(item_cdp_el.get_attribute("data-product-id"))
     ```
 
-## Tips for Robust Scrolling & Extraction:
+## Tips for Robust CDP Scrolling & Extraction:
 
-*   **Wait:** Always use appropriate waits (`self.wait_for_element_visible()`, `self.sleep()`, `sb.cdp.wait_for_element_visible()`) after scrolling, especially if content loads dynamically.
-*   **Visibility:** Ensure elements are not just present in the DOM but also visible before trying to interact or extract text that depends on rendering. `self.is_element_visible()` or `element.is_displayed()` can help.
-*   **StaleElementReferenceException:** If you encounter this, it means the element you're trying to use is no longer attached to the DOM. Re-find the element after the action that caused it to go stale (like a scroll that re-renders content).
-*   **CDP vs Standard:**
-    *   CDP scrolling (`sb.cdp.scroll_to_bottom()`, `sb.cdp.scroll_into_view()`) can sometimes be faster or behave differently.
-    *   Standard methods using JavaScript execution (`self.execute_script()`) are very flexible and widely applicable.
-*   **Small Incremental Scrolls:** For tricky scrollable elements or lazy loading, scrolling by smaller amounts in a loop and checking for visibility/new content can be more reliable than one large scroll.
+*   **Activate CDP Mode:** Always call `sb.activate_cdp_mode()` before using `sb.cdp.*` methods.
+*   **Wait After Scroll:** Use `sb.sleep()` or specific `sb.cdp.wait_for_*` methods after scrolling, especially if content loads dynamically. CDP actions can be very fast.
+*   **Visibility with CDP:** `sb.cdp.is_element_visible(selector)` is the primary way to check visibility. `CDPWebElement` objects themselves don't have an `is_displayed()` method like Selenium WebElements.
+*   **Stale Elements:** Re-fetch elements with `sb.cdp.find_element(s)()` if the DOM might have changed after a scroll or other interaction.
+*   **JavaScript via `sb.cdp.evaluate()`:** For complex scrolling within specific elements or custom scroll logic, `sb.cdp.evaluate()` is a powerful tool in CDP mode.
+*   **Small Incremental Scrolls for Lazy Loading:** In the infinite scroll loop, instead of `sb.cdp.scroll_to_bottom()`, you could use `sb.cdp.scroll_down(fixed_amount)` multiple times, checking for new content more frequently.
 
 ---
-This cheat sheet provides a foundation. Specific implementations may vary based on website structure and behavior.
+This cheat sheet provides a foundation for CDP-focused scrolling. Specific implementations may vary.
 ```
-
-The file `seleniumbase_scrolling_extraction_cheatsheet.md` has been created with the initial structure and content. I will proceed to populate and refine it according to the plan.
