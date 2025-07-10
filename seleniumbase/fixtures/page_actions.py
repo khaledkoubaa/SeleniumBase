@@ -751,6 +751,155 @@ def wait_for_exact_text_visible(
         return element
 
 
+def wait_for_any_of_elements_visible(
+    driver,
+    selectors,
+    timeout=settings.LARGE_TIMEOUT,
+    original_selectors=[],
+    ignore_test_time_limit=False,
+):
+    """
+    Waits for at least one of the elements in the selector list to be visible.
+    Returns the first element that is found.
+    Raises NoSuchElementException if none of the elements exist in the HTML
+    within the specified timeout.
+    Raises ElementNotVisibleException if the element exists in the HTML,
+    but is not visible (eg. opacity is "0") within the specified timeout.
+    @Params
+    driver - the webdriver object (required)
+    selectors - the list of selectors for identifying page elements (required)
+    timeout - the time to wait for elements in seconds
+    original_selectors - handle pre-converted ":contains(TEXT)" selectors
+    ignore_test_time_limit - ignore test time limit (NOT related to timeout)
+    @Returns
+    A web element object
+    """
+    if not isinstance(selectors, (list, tuple)):
+        raise Exception("`selectors` must be a list or tuple!")
+    if not selectors:
+        raise Exception("`selectors` cannot be an empty list!")
+    _reconnect_if_disconnected(driver)
+    element = None
+    any_present = False
+    start_ms = time.time() * 1000.0
+    stop_ms = start_ms + (timeout * 1000.0)
+    for x in range(int(timeout * 10)):
+        if not ignore_test_time_limit:
+            shared_utils.check_if_time_limit_exceeded()
+        try:
+            for selector in selectors:
+                by = "css selector"
+                if page_utils.is_xpath_selector(selector):
+                    by = "xpath"
+                try:
+                    element = driver.find_element(by=by, value=selector)
+                    any_present = True
+                    if element.is_displayed():
+                        return element
+                    element = None
+                except Exception:
+                    pass
+            raise Exception("Nothing found yet!")
+        except Exception:
+            now_ms = time.time() * 1000.0
+            if now_ms >= stop_ms:
+                break
+            time.sleep(0.1)
+    plural = "s"
+    if timeout == 1:
+        plural = ""
+    if original_selectors:
+        selectors = original_selectors
+    if not element:
+        if not any_present:
+            # None of the elements exist in the HTML
+            message = (
+                "None of the elements {%s} were present after %s second%s!" % (
+                    str(selectors),
+                    timeout,
+                    plural,
+                )
+            )
+            timeout_exception(NoSuchElementException, message)
+        # At least one element exists in the HTML, but none are visible
+        message = "None of the elements %s were visible after %s second%s!" % (
+            str(selectors),
+            timeout,
+            plural,
+        )
+        timeout_exception(ElementNotVisibleException, message)
+    else:
+        return element
+
+
+def wait_for_any_of_elements_present(
+    driver,
+    selectors,
+    timeout=settings.LARGE_TIMEOUT,
+    original_selectors=[],
+    ignore_test_time_limit=False,
+):
+    """
+    Waits for at least one of the elements in the selector list to be present.
+    Visibility not required. (Eg. <head> hidden in the HTML)
+    Returns the first element that is found.
+    Raises NoSuchElementException if none of the elements exist in the HTML
+    within the specified timeout.
+    @Params
+    driver - the webdriver object (required)
+    selectors - the list of selectors for identifying page elements (required)
+    timeout - the time to wait for elements in seconds
+    original_selectors - handle pre-converted ":contains(TEXT)" selectors
+    ignore_test_time_limit - ignore test time limit (NOT related to timeout)
+    @Returns
+    A web element object
+    """
+    if not isinstance(selectors, (list, tuple)):
+        raise Exception("`selectors` must be a list or tuple!")
+    if not selectors:
+        raise Exception("`selectors` cannot be an empty list!")
+    _reconnect_if_disconnected(driver)
+    element = None
+    start_ms = time.time() * 1000.0
+    stop_ms = start_ms + (timeout * 1000.0)
+    for x in range(int(timeout * 10)):
+        if not ignore_test_time_limit:
+            shared_utils.check_if_time_limit_exceeded()
+        try:
+            for selector in selectors:
+                by = "css selector"
+                if page_utils.is_xpath_selector(selector):
+                    by = "xpath"
+                try:
+                    element = driver.find_element(by=by, value=selector)
+                    return element
+                except Exception:
+                    pass
+            raise Exception("Nothing found yet!")
+        except Exception:
+            now_ms = time.time() * 1000.0
+            if now_ms >= stop_ms:
+                break
+            time.sleep(0.1)
+    plural = "s"
+    if timeout == 1:
+        plural = ""
+    if original_selectors:
+        selectors = original_selectors
+    if not element:
+        # None of the elements exist in the HTML
+        message = (
+            "None of the elements %s were present after %s second%s!" % (
+                str(selectors),
+                timeout,
+                plural,
+            )
+        )
+        timeout_exception(NoSuchElementException, message)
+    else:
+        return element
+
+
 def wait_for_attribute(
     driver,
     selector,
@@ -1423,7 +1572,9 @@ def wait_for_and_switch_to_alert(driver, timeout=settings.LARGE_TIMEOUT):
     timeout_exception(Exception, message)
 
 
-def switch_to_frame(driver, frame, timeout=settings.SMALL_TIMEOUT):
+def switch_to_frame(
+    driver, frame, timeout=settings.SMALL_TIMEOUT, invisible=False
+):
     """
     Wait for an iframe to appear, and switch to it. This should be
     usable as a drop-in replacement for driver.switch_to.frame().
@@ -1431,6 +1582,7 @@ def switch_to_frame(driver, frame, timeout=settings.SMALL_TIMEOUT):
     driver - the webdriver object (required)
     frame - the frame element, name, id, index, or selector
     timeout - the time to wait for the alert in seconds
+    invisible - if True, the iframe can be invisible
     """
     _reconnect_if_disconnected(driver)
     start_ms = time.time() * 1000.0
@@ -1447,7 +1599,10 @@ def switch_to_frame(driver, frame, timeout=settings.SMALL_TIMEOUT):
                     by = "xpath"
                 else:
                     by = "css selector"
-                if is_element_visible(driver, frame, by=by):
+                if (
+                    is_element_visible(driver, frame, by=by)
+                    or (invisible and is_element_present(driver, frame, by=by))
+                ):
                     with suppress(Exception):
                         element = driver.find_element(by=by, value=frame)
                         driver.switch_to.frame(element)
@@ -1459,8 +1614,12 @@ def switch_to_frame(driver, frame, timeout=settings.SMALL_TIMEOUT):
     plural = "s"
     if timeout == 1:
         plural = ""
-    message = "Frame {%s} was not visible after %s second%s!" % (
+    presence = "visible"
+    if invisible:
+        presence = "present"
+    message = "Frame {%s} was not %s after %s second%s!" % (
         frame,
+        presence,
         timeout,
         plural,
     )

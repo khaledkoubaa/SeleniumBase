@@ -51,7 +51,14 @@ def __activate_virtual_display_as_needed(
     headless, headed, xvfb, xvfb_metrics
 ):
     """This is only needed on Linux."""
-    if IS_LINUX and (not headed or xvfb):
+    if (
+        IS_LINUX
+        and (not headed or xvfb)
+        and (
+            not hasattr(sb_config, "_virtual_display")
+            or not sb_config._virtual_display
+        )
+    ):
         from sbvirtualdisplay import Display
         pip_find_lock = fasteners.InterProcessLock(
             constants.PipInstall.FINDLOCK
@@ -87,6 +94,11 @@ def __activate_virtual_display_as_needed(
                         backend="xvfb",
                         use_xauth=True,
                     )
+                    if "--debug-display" in sys.argv:
+                        print(
+                            "Starting VDisplay from cdp_util: (%s, %s)"
+                            % (_xvfb_width, _xvfb_height)
+                        )
                     _xvfb_display.start()
                     if "DISPLAY" not in os.environ.keys():
                         print(
@@ -360,16 +372,16 @@ async def start(
     except Exception:
         time.sleep(0.15)
         driver = await Browser.create(config)
-    if proxy and "@" in str(proxy):
-        time.sleep(0.15)
+    if proxy:
+        sb_config._cdp_proxy = proxy
+        if "@" in str(proxy):
+            time.sleep(0.15)
     if lang:
         sb_config._cdp_locale = lang
     elif "locale" in kwargs:
         sb_config._cdp_locale = kwargs["locale"]
     elif "locale_code" in kwargs:
         sb_config._cdp_locale = kwargs["locale_code"]
-    else:
-        sb_config._cdp_locale = None
     if tzone:
         sb_config._cdp_timezone = tzone
     elif "timezone" in kwargs:
@@ -402,10 +414,14 @@ async def start_async(*args, **kwargs) -> Browser:
     binary_location = None
     if "browser_executable_path" in kwargs:
         binary_location = kwargs["browser_executable_path"]
+        if binary_location and isinstance(binary_location, str):
+            binary_location = binary_location.strip()
     else:
         binary_location = detect_b_ver.get_binary_location("google-chrome")
-        if binary_location and not os.path.exists(binary_location):
-            binary_location = None
+        if binary_location and isinstance(binary_location, str):
+            binary_location = binary_location.strip()
+            if not os.path.exists(binary_location):
+                binary_location = None
     if (
         shared_utils.is_chrome_130_or_newer(binary_location)
         and "user_data_dir" in kwargs
@@ -438,10 +454,14 @@ def start_sync(*args, **kwargs) -> Browser:
     binary_location = None
     if "browser_executable_path" in kwargs:
         binary_location = kwargs["browser_executable_path"]
+        if binary_location and isinstance(binary_location, str):
+            binary_location = binary_location.strip()
     else:
         binary_location = detect_b_ver.get_binary_location("google-chrome")
-        if binary_location and not os.path.exists(binary_location):
-            binary_location = None
+        if binary_location and isinstance(binary_location, str):
+            binary_location = binary_location.strip()
+            if not os.path.exists(binary_location):
+                binary_location = None
     if (
         shared_utils.is_chrome_130_or_newer(binary_location)
         and "user_data_dir" in kwargs

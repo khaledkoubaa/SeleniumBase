@@ -30,11 +30,13 @@ if sys.argv[-1] == "publish":
     confirm_text = ">>> Confirm release PUBLISH to PyPI? (yes/no): "
     reply = str(input_method(confirm_text)).lower().strip()
     if reply == "yes":
-        if sys.version_info < (3, 9):
-            print("\nERROR! Publishing to PyPI requires Python>=3.9")
+        if sys.version_info < (3, 10):
+            current_ver = ".".join(str(ver) for ver in sys.version_info[:3])
+            print("\nERROR! Publishing to PyPI requires Python>=3.10")
+            print("You are currently using Python %s\n" % current_ver)
             sys.exit()
         print("\n*** Checking code health with flake8:\n")
-        os.system("python -m pip install 'flake8==7.2.0'")
+        os.system("python -m pip install 'flake8==7.3.0'")
         flake8_status = os.system("flake8 --exclude=recordings,temp")
         if flake8_status != 0:
             print("\nERROR! Fix flake8 issues before publishing to PyPI!\n")
@@ -54,10 +56,6 @@ if sys.argv[-1] == "publish":
         os.system("python -m pip install --upgrade 'jaraco.classes'")
         print("\n*** Installing more-itertools: *** (For PyPI uploads)\n")
         os.system("python -m pip install --upgrade 'more-itertools'")
-        print("\n*** Installing zipp: *** (Required for PyPI uploads)\n")
-        os.system("python -m pip install --upgrade 'zipp'")
-        print("\n*** Installing importlib-metadata: *** (For PyPI uploads)\n")
-        os.system("python -m pip install --upgrade 'importlib-metadata'")
         print("\n*** Installing keyring, requests-toolbelt: *** (For PyPI)\n")
         os.system("python -m pip install --upgrade keyring requests-toolbelt")
         print("\n*** Installing twine: *** (Required for PyPI uploads)\n")
@@ -128,6 +126,7 @@ setup(
         "Programming Language :: Python :: 3.11",
         "Programming Language :: Python :: 3.12",
         "Programming Language :: Python :: 3.13",
+        "Programming Language :: Python :: 3.14",
         "Topic :: Internet",
         "Topic :: Internet :: WWW/HTTP :: Browsers",
         "Topic :: Scientific/Engineering",
@@ -151,10 +150,10 @@ setup(
         'pip>=25.1.1;python_version>="3.9"',
         'packaging>=25.0',
         'setuptools~=70.2;python_version<"3.10"',  # Newer ones had issues
-        'setuptools>=80.4.0;python_version>="3.10"',
+        'setuptools>=80.9.0;python_version>="3.10"',
         'wheel>=0.45.1',
         'attrs>=25.3.0',
-        "certifi>=2025.4.26",
+        "certifi>=2025.7.9",
         "exceptiongroup>=1.3.0",
         'websockets~=13.1;python_version<"3.9"',
         'websockets>=15.0.1;python_version>="3.9"',
@@ -175,16 +174,16 @@ setup(
         'parse-type>=0.6.4',
         'colorama>=0.4.6',
         'pyyaml>=6.0.2',
-        'pygments>=2.19.1',
+        'pygments>=2.19.2',
         'pyreadline3>=3.5.3;platform_system=="Windows"',
         "tabcompleter>=1.4.0",
-        "pdbp>=1.7.0",
+        "pdbp>=1.7.1",
         "idna==3.10",
         'chardet==5.2.0',
         'charset-normalizer>=3.4.2,<4',
         'urllib3>=1.26.20,<2;python_version<"3.10"',
-        'urllib3>=1.26.20,<2.5.0;python_version>="3.10"',
-        'requests==2.32.3',
+        'urllib3>=1.26.20,<2.6.0;python_version>="3.10"',
+        'requests==2.32.4',
         'sniffio==1.3.1',
         'h11==0.16.0',
         'outcome==1.3.0.post0',
@@ -194,20 +193,24 @@ setup(
         'wsproto==1.2.0',
         'websocket-client==1.8.0',
         'selenium==4.27.1;python_version<"3.9"',
-        'selenium==4.32.0;python_version>="3.9"',
+        'selenium==4.32.0;python_version>="3.9" and python_version<"3.10"',
+        'selenium==4.34.2;python_version>="3.10"',
         'cssselect==1.2.0;python_version<"3.9"',
         'cssselect==1.3.0;python_version>="3.9"',
         "sortedcontainers==2.4.0",
         'execnet==2.1.1',
         'iniconfig==2.1.0',
-        'pluggy==1.5.0',
-        'pytest==8.3.5',
+        'pluggy==1.5.0;python_version<"3.9"',
+        'pluggy==1.6.0;python_version>="3.9"',
+        'pytest==8.3.5;python_version<"3.9"',
+        'pytest==8.4.1;python_version>="3.9"',
         "pytest-html==4.0.2",  # Newer ones had issues
         'pytest-metadata==3.1.1',
         "pytest-ordering==0.6",
         'pytest-rerunfailures==14.0;python_version<"3.9"',
         'pytest-rerunfailures==15.1;python_version>="3.9"',
-        'pytest-xdist==3.6.1',
+        'pytest-xdist==3.6.1;python_version<"3.9"',
+        'pytest-xdist==3.8.0;python_version>="3.9"',
         'parameterized==0.9.0',
         "behave==1.2.6",
         'soupsieve==2.7',
@@ -231,20 +234,20 @@ setup(
         # Usage: coverage run -m pytest; coverage html; coverage report
         "coverage": [
             'coverage>=7.6.1;python_version<"3.9"',
-            'coverage>=7.8.0;python_version>="3.9"',
+            'coverage>=7.9.2;python_version>="3.9"',
             'pytest-cov>=5.0.0;python_version<"3.9"',
-            'pytest-cov>=6.1.1;python_version>="3.9"',
+            'pytest-cov>=6.2.1;python_version>="3.9"',
         ],
         # pip install -e .[flake8]
         # Usage: flake8
         "flake8": [
             'flake8==5.0.4;python_version<"3.9"',
-            'flake8==7.2.0;python_version>="3.9"',
+            'flake8==7.3.0;python_version>="3.9"',
             "mccabe==0.7.0",
             'pyflakes==2.5.0;python_version<"3.9"',
-            'pyflakes==3.3.2;python_version>="3.9"',
+            'pyflakes==3.4.0;python_version>="3.9"',
             'pycodestyle==2.9.1;python_version<"3.9"',
-            'pycodestyle==2.13.0;python_version>="3.9"',
+            'pycodestyle==2.14.0;python_version>="3.9"',
         ],
         # pip install -e .[ipdb]
         # (Not needed for debugging anymore. SeleniumBase now includes "pdbp".)
@@ -264,7 +267,7 @@ setup(
             'pdfminer.six==20250324;python_version<"3.9"',
             'pdfminer.six==20250506;python_version>="3.9"',
             'cryptography==39.0.2;python_version<"3.9"',
-            'cryptography==44.0.3;python_version>="3.9"',
+            'cryptography==45.0.5;python_version>="3.9"',
             'cffi==1.17.1',
             "pycparser==2.22",
         ],
@@ -272,7 +275,7 @@ setup(
         # (An optional library for image-processing.)
         "pillow": [
             'Pillow>=10.4.0;python_version<"3.9"',
-            'Pillow>=11.2.1;python_version>="3.9"',
+            'Pillow>=11.3.0;python_version>="3.9"',
         ],
         # pip install -e .[pip-system-certs]
         # (If you see [SSL: CERTIFICATE_VERIFY_FAILED], then get this.)
@@ -322,6 +325,8 @@ setup(
         "seleniumbase.console_scripts",
         "seleniumbase.core",
         "seleniumbase.drivers",
+        "seleniumbase.drivers.cft_drivers",
+        "seleniumbase.drivers.chs_drivers",
         "seleniumbase.extensions",
         "seleniumbase.fixtures",
         "seleniumbase.js_code",

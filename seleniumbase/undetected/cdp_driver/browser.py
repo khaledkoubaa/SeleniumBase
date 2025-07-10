@@ -16,7 +16,7 @@ import urllib.request
 import warnings
 from collections import defaultdict
 from seleniumbase import config as sb_config
-from typing import List, Set, Tuple, Union
+from typing import List, Optional, Set, Tuple, Union
 import mycdp as cdp
 from . import cdp_util as util
 from . import tab
@@ -292,6 +292,7 @@ class Browser:
             _cdp_locale = None
             _cdp_platform = None
             _cdp_geolocation = None
+            _cdp_recorder = None
             if (
                 hasattr(sb_config, "_cdp_timezone") and sb_config._cdp_timezone
             ):
@@ -322,6 +323,8 @@ class Browser:
                 _cdp_locale = kwargs["locale"]
             elif "lang" in kwargs:
                 _cdp_locale = kwargs["lang"]
+            elif "locale_code" in kwargs:
+                _cdp_locale = kwargs["locale_code"]
             if "platform" in kwargs:
                 _cdp_platform = kwargs["platform"]
             elif "plat" in kwargs:
@@ -330,9 +333,13 @@ class Browser:
                 _cdp_geolocation = kwargs["geolocation"]
             elif "geoloc" in kwargs:
                 _cdp_geolocation = kwargs["geoloc"]
+            if "recorder" in kwargs:
+                _cdp_recorder = kwargs["recorder"]
             if _cdp_timezone:
                 await connection.send(cdp.page.navigate("about:blank"))
                 await connection.set_timezone(_cdp_timezone)
+            if _cdp_locale:
+                await connection.set_locale(_cdp_locale)
             if _cdp_user_agent or _cdp_locale or _cdp_platform:
                 await connection.send(cdp.page.navigate("about:blank"))
                 await connection.set_user_agent(
@@ -344,9 +351,37 @@ class Browser:
                 await connection.send(cdp.page.navigate("about:blank"))
                 await connection.set_geolocation(_cdp_geolocation)
             # Use the tab to navigate to new url
+            if (
+                hasattr(sb_config, "_cdp_proxy")
+                and "@" in sb_config._cdp_proxy
+                and sb_config._cdp_proxy
+                and "auth" not in kwargs
+            ):
+                username_and_password = sb_config._cdp_proxy.split("@")[0]
+                proxy_user = username_and_password.split(":")[0]
+                proxy_pass = username_and_password.split(":")[1]
+                await connection.set_auth(
+                    proxy_user, proxy_pass, self.tabs[0]
+                )
+                time.sleep(0.25)
+            elif "auth" in kwargs and kwargs["auth"] and ":" in kwargs["auth"]:
+                username_and_password = kwargs["auth"]
+                proxy_user = username_and_password.split(":")[0]
+                proxy_pass = username_and_password.split(":")[1]
+                await connection.set_auth(
+                    proxy_user, proxy_pass, self.tabs[0]
+                )
+                time.sleep(0.25)
             frame_id, loader_id, *_ = await connection.send(
                 cdp.page.navigate(url)
             )
+            if _cdp_recorder:
+                pass  # (The code below was for the Chrome 137 extension fix)
+                '''from seleniumbase.js_code.recorder_js import recorder_js
+                recorder_code = (
+                    """window.onload = function() { %s };""" % recorder_js
+                )
+                await connection.send(cdp.runtime.evaluate(recorder_code))'''
             # Update the frame_id on the tab
             connection.frame_id = frame_id
             connection.browser = self
@@ -469,10 +504,22 @@ class Browser:
         # self.connection.handlers[cdp.inspector.Detached] = [self.stop]
         # return self
 
+    async def grant_permissions(
+        self,
+        permissions: List[str] | str,
+        origin: Optional[str] = None,
+    ):
+        """Grant specific permissions to the current window.
+        Applies to all origins if no origin is specified."""
+        if isinstance(permissions, str):
+            permissions = [permissions]
+        await self.connection.send(
+            cdp.browser.grant_permissions(permissions, origin)
+        )
+
     async def grant_all_permissions(self):
         """
         Grant permissions for:
-            accessibilityEvents
             audioCapture
             backgroundSync
             backgroundFetch
@@ -489,20 +536,44 @@ class Browser:
             notifications
             paymentHandler
             periodicBackgroundSync
-            protectedMediaIdentifier
             sensors
             storageAccess
             topLevelStorageAccess
             videoCapture
-            videoCapturePanTiltZoom
             wakeLockScreen
             wakeLockSystem
             windowManagement
         """
-        permissions = list(cdp.browser.PermissionType)
-        permissions.remove(cdp.browser.PermissionType.FLASH)
-        permissions.remove(cdp.browser.PermissionType.CAPTURED_SURFACE_CONTROL)
+        permissions = [
+            "audioCapture",
+            "backgroundSync",
+            "backgroundFetch",
+            "clipboardReadWrite",
+            "clipboardSanitizedWrite",
+            "displayCapture",
+            "durableStorage",
+            "geolocation",
+            "idleDetection",
+            "localFonts",
+            "midi",
+            "midiSysex",
+            "nfc",
+            "notifications",
+            "paymentHandler",
+            "periodicBackgroundSync",
+            "sensors",
+            "storageAccess",
+            "topLevelStorageAccess",
+            "videoCapture",
+            "wakeLockScreen",
+            "wakeLockSystem",
+            "windowManagement",
+        ]
         await self.connection.send(cdp.browser.grant_permissions(permissions))
+
+    async def reset_permissions(self):
+        """Reset permissions for all origins on the current window."""
+        await self.connection.send(cdp.browser.reset_permissions())
 
     async def tile_windows(self, windows=None, max_columns: int = 0):
         import math
@@ -679,6 +750,9 @@ class Browser:
                         raise
             self._process = None
             self._process_pid = None
+
+    def quit(self):
+        self.stop()
 
     def __await__(self):
         # return ( asyncio.sleep(0)).__await__()

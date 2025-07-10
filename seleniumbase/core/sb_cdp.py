@@ -645,6 +645,30 @@ class CDPMethods():
             driver.tile_windows(windows, max_columns)
         )
 
+    def grant_permissions(self, permissions, origin=None):
+        """Grant specific permissions to the current window.
+        Applies to all origins if no origin is specified."""
+        driver = self.driver
+        if hasattr(driver, "cdp_base"):
+            driver = driver.cdp_base
+        return self.loop.run_until_complete(
+            driver.grant_permissions(permissions, origin)
+        )
+
+    def grant_all_permissions(self):
+        """Grant all permissions to the current window for all origins."""
+        driver = self.driver
+        if hasattr(driver, "cdp_base"):
+            driver = driver.cdp_base
+        return self.loop.run_until_complete(driver.grant_all_permissions())
+
+    def reset_permissions(self):
+        """Reset permissions for all origins on the current window."""
+        driver = self.driver
+        if hasattr(driver, "cdp_base"):
+            driver = driver.cdp_base
+        return self.loop.run_until_complete(driver.reset_permissions())
+
     def get_all_cookies(self, *args, **kwargs):
         driver = self.driver
         if hasattr(driver, "cdp_base"):
@@ -681,9 +705,7 @@ class CDPMethods():
         driver = self.driver
         if hasattr(driver, "cdp_base"):
             driver = driver.cdp_base
-        return self.loop.run_until_complete(
-            driver.cookies.clear()
-        )
+        return self.loop.run_until_complete(driver.cookies.clear())
 
     def sleep(self, seconds):
         time.sleep(seconds)
@@ -702,9 +724,7 @@ class CDPMethods():
 
         js_code = active_css_js.get_active_element_css
         js_code = js_code.replace("return getBestSelector", "getBestSelector")
-        return self.loop.run_until_complete(
-            self.page.evaluate(js_code)
-        )
+        return self.loop.run_until_complete(self.page.evaluate(js_code))
 
     def click(self, selector, timeout=None):
         if not timeout:
@@ -978,17 +998,13 @@ class CDPMethods():
                 "\n".join(exp_list[0:-1]) + "\n"
                 + exp_list[-1].strip()[len("return "):]
             ).strip()
-        return self.loop.run_until_complete(
-            self.page.evaluate(expression)
-        )
+        return self.loop.run_until_complete(self.page.evaluate(expression))
 
     def js_dumps(self, obj_name):
         """Similar to evaluate(), but for dictionary results."""
         if obj_name.startswith("return "):
             obj_name = obj_name[len("return "):]
-        return self.loop.run_until_complete(
-            self.page.js_dumps(obj_name)
-        )
+        return self.loop.run_until_complete(self.page.js_dumps(obj_name))
 
     def maximize(self):
         if self.get_window()[1].window_state.value == "maximized":
@@ -1309,6 +1325,8 @@ class CDPMethods():
         )
 
     def get_element_attribute(self, selector, attribute):
+        """Find an element and return the value of an attribute.
+        Raises an exception if there's no such element or attribute."""
         attributes = self.get_element_attributes(selector)
         with suppress(Exception):
             return attributes[attribute]
@@ -1319,10 +1337,16 @@ class CDPMethods():
         return value
 
     def get_attribute(self, selector, attribute):
+        """Find an element and return the value of an attribute.
+        If the element doesn't exist: Raises an exception.
+        If the attribute doesn't exist: Returns None."""
         return self.find_element(selector).get_attribute(attribute)
 
     def get_element_html(self, selector):
+        """Find an element and return the outerHTML."""
         selector = self.__convert_to_css_if_xpath(selector)
+        self.find_element(selector)
+        self.__add_light_pause()
         return self.loop.run_until_complete(
             self.page.evaluate(
                 """document.querySelector('%s').outerHTML"""
@@ -1415,6 +1439,10 @@ class CDPMethods():
                         shared_utils.is_linux()
                         and (not sb_config.headed or sb_config.xvfb)
                         and not driver.config.headless
+                        and (
+                            not hasattr(sb_config, "_virtual_display")
+                            or not sb_config._virtual_display
+                        )
                     ):
                         from sbvirtualdisplay import Display
                         xvfb_width = 1366
@@ -1442,6 +1470,11 @@ class CDPMethods():
                                 backend="xvfb",
                                 use_xauth=True,
                             )
+                            if "--debug-display" in sys.argv:
+                                print(
+                                    "Starting VDisplay from sb_cdp: (%s, %s)"
+                                    % (xvfb_width, xvfb_height)
+                                )
                             xvfb_display.start()
 
     def __get_configured_pyautogui(self, pyautogui_copy):
@@ -1980,6 +2013,150 @@ class CDPMethods():
             "Element {%s} was still present after %s second%s!"
             % (selector, timeout, plural)
         )
+
+    def wait_for_any_of_elements_visible(self, *args, **kwargs):
+        """Waits for at least one of the elements to be visible.
+        Returns the first element that is found.
+        The input is a list of elements. (Should be CSS selectors)
+        Optional kwargs include: "timeout" (used by all selectors).
+        Raises an exception if no elements are visible by the timeout.
+        Examples:
+            sb.cdp.wait_for_any_of_elements_visible("h1", "h2", "h3")
+            OR
+            sb.cdp.wait_for_any_of_elements_visible(["h1", "h2", "h3"]) """
+        selectors = []
+        timeout = None
+        for kwarg in kwargs:
+            if kwarg == "timeout":
+                timeout = kwargs["timeout"]
+            elif kwarg == "by":
+                pass  # Autodetected
+            elif kwarg == "selector" or kwarg == "selectors":
+                selector = kwargs[kwarg]
+                if isinstance(selector, str):
+                    selectors.append(selector)
+                elif isinstance(selector, list):
+                    selectors_list = selector
+                    for selector in selectors_list:
+                        if isinstance(selector, str):
+                            selectors.append(selector)
+            else:
+                raise Exception('Unknown kwarg: "%s"!' % kwarg)
+        if not timeout:
+            timeout = settings.SMALL_TIMEOUT
+        for arg in args:
+            if isinstance(arg, list):
+                for selector in arg:
+                    if isinstance(selector, str):
+                        selectors.append(selector)
+            elif isinstance(arg, str):
+                selectors.append(arg)
+        if not selectors:
+            raise Exception("The selectors list was empty!")
+        start_ms = time.time() * 1000.0
+        stop_ms = start_ms + (timeout * 1000.0)
+        any_present = False
+        for i in range(int(timeout * 10)):
+            for selector in selectors:
+                if self.is_element_visible(selector):
+                    return self.select(selector)
+                if self.is_element_present(selector):
+                    any_present = True
+            now_ms = time.time() * 1000.0
+            if now_ms >= stop_ms:
+                break
+            time.sleep(0.1)
+        plural = "s"
+        if timeout == 1:
+            plural = ""
+        if not any_present:
+            # None of the elements exist in the HTML
+            raise Exception(
+                "None of the elements {%s} were present after %s second%s!" % (
+                    str(selectors),
+                    timeout,
+                    plural,
+                )
+            )
+        raise Exception(
+            "None of the elements %s were visible after %s second%s!" % (
+                str(selectors),
+                timeout,
+                plural,
+            )
+        )
+
+    def wait_for_any_of_elements_present(self, *args, **kwargs):
+        """Waits for at least one of the elements to be present.
+        Visibility not required, but element must be in the DOM.
+        Returns the first element that is found.
+        The input is a list of elements. (Should be CSS selectors)
+        Optional kwargs include: "timeout" (used by all selectors).
+        Raises an exception if no elements are present by the timeout.
+        Examples:
+            self.wait_for_any_of_elements_present("style", "script")
+            OR
+            self.wait_for_any_of_elements_present(["style", "script"]) """
+        selectors = []
+        timeout = None
+        for kwarg in kwargs:
+            if kwarg == "timeout":
+                timeout = kwargs["timeout"]
+            elif kwarg == "by":
+                pass  # Autodetected
+            elif kwarg == "selector" or kwarg == "selectors":
+                selector = kwargs[kwarg]
+                if isinstance(selector, str):
+                    selectors.append(selector)
+                elif isinstance(selector, list):
+                    selectors_list = selector
+                    for selector in selectors_list:
+                        if isinstance(selector, str):
+                            selectors.append(selector)
+            else:
+                raise Exception('Unknown kwarg: "%s"!' % kwarg)
+        if not timeout:
+            timeout = settings.SMALL_TIMEOUT
+        for arg in args:
+            if isinstance(arg, list):
+                for selector in arg:
+                    if isinstance(selector, str):
+                        selectors.append(selector)
+            elif isinstance(arg, str):
+                selectors.append(arg)
+        if not selectors:
+            raise Exception("The selectors list was empty!")
+        start_ms = time.time() * 1000.0
+        stop_ms = start_ms + (timeout * 1000.0)
+        for i in range(int(timeout * 10)):
+            for selector in selectors:
+                if self.is_element_present(selector):
+                    return self.select(selector)
+            now_ms = time.time() * 1000.0
+            if now_ms >= stop_ms:
+                break
+            time.sleep(0.1)
+        plural = "s"
+        if timeout == 1:
+            plural = ""
+        # None of the elements exist in the HTML
+        raise Exception(
+            "None of the elements %s were present after %s second%s!" % (
+                str(selectors),
+                timeout,
+                plural,
+            )
+        )
+
+    def assert_any_of_elements_visible(self, *args, **kwargs):
+        """Like wait_for_any_of_elements_visible(), but returns nothing."""
+        self.wait_for_any_of_elements_visible(*args, **kwargs)
+        return True
+
+    def assert_any_of_elements_present(self, *args, **kwargs):
+        """Like wait_for_any_of_elements_present(), but returns nothing."""
+        self.wait_for_any_of_elements_present(*args, **kwargs)
+        return True
 
     def assert_element(self, selector, timeout=None):
         """Same as assert_element_visible()"""

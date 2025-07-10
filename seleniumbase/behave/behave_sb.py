@@ -11,6 +11,8 @@ behave -D agent="User Agent String" -D demo
 -D edge  (Shortcut for "-D browser=edge".)
 -D firefox  (Shortcut for "-D browser=firefox".)
 -D safari  (Shortcut for "-D browser=safari".)
+-D cft  (Shortcut for using `Chrome for Testing`)
+-D chs  (Shortcut for using `Chrome-Headless-Shell`)
 -D settings-file=FILE  (Override default SeleniumBase settings.)
 -D env=ENV  (Set the test env. Access with "self.env" in tests.)
 -D account=STR  (Set account. Access with "self.account" in tests.)
@@ -176,6 +178,7 @@ def get_configured_sb(context):
     sb.extension_zip = None
     sb.extension_dir = None
     sb.binary_location = None
+    sb_config.binary_location = None
     sb.driver_version = None
     sb.page_load_strategy = None
     sb.database_env = "test"
@@ -488,6 +491,19 @@ def get_configured_sb(context):
             if binary_location == "true":
                 binary_location = sb.binary_location  # revert to default
             sb.binary_location = binary_location
+            sb_config.binary_location = binary_location
+            continue
+        # Handle: -D cft
+        if low_key in ["cft"] and not sb_config.binary_location:
+            binary_location = "cft"
+            sb.binary_location = binary_location
+            sb_config.binary_location = binary_location
+            continue
+        # Handle: -D chs
+        if low_key in ["chs"] and not sb_config.binary_location:
+            binary_location = "chs"
+            sb.binary_location = binary_location
+            sb_config.binary_location = binary_location
             continue
         # Handle: -D driver-version=VER / driver_version=VER
         if low_key in ["driver-version", "driver_version"]:
@@ -1280,15 +1296,9 @@ def _perform_behave_unconfigure_():
     )
     find_it_3 = '<td class="col-result">Untested</td>'
     swap_with_3 = '<td class="col-result">Unreported</td>'
-    if sys.version_info[0] >= 3:
-        # These use caching to prevent extra method calls
-        DASH_PIE_PNG_1 = constants.Dashboard.get_dash_pie_1()
-        DASH_PIE_PNG_2 = constants.Dashboard.get_dash_pie_2()
-    else:
-        from seleniumbase.core import encoded_images
-
-        DASH_PIE_PNG_1 = encoded_images.get_dash_pie_png1()
-        DASH_PIE_PNG_2 = encoded_images.get_dash_pie_png2()
+    # These use caching to prevent extra method calls
+    DASH_PIE_PNG_1 = constants.Dashboard.get_dash_pie_1()
+    DASH_PIE_PNG_2 = constants.Dashboard.get_dash_pie_2()
     find_it_4 = 'href="%s"' % DASH_PIE_PNG_1
     swap_with_4 = 'href="%s"' % DASH_PIE_PNG_2
     try:

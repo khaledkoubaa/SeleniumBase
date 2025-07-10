@@ -161,7 +161,7 @@ self.set_window_position(x, y)
 self.maximize_window()
 self.minimize_window()
 self.reset_window_size()
-self.switch_to_frame(frame="iframe", timeout=None)
+self.switch_to_frame(frame="iframe", timeout=None, invisible=False)
 self.switch_to_default_content()
 self.switch_to_parent_frame()
 with self.frame_switch(frame, timeout=None):
@@ -250,6 +250,7 @@ self.save_screenshot_to_logs(name=None, selector=None, by="css selector")
 self.save_data_to_logs(data, file_name=None)
 self.append_data_to_logs(data, file_name=None)
 self.save_page_source(name, folder=None)
+self.save_page_source_to_logs(name=None)
 self.save_cookies(name="cookies.txt")
 self.load_cookies(name="cookies.txt", expiry=False)
 self.delete_all_cookies()
@@ -541,6 +542,13 @@ self.assert_element(selector, by="css selector", timeout=None)
 self.assert_elements(*args, **kwargs)
 # Duplicates:
 # self.assert_elements_visible(*args, **kwargs)
+
+############
+
+self.wait_for_any_of_elements_visible(*args, **kwargs)
+self.wait_for_any_of_elements_present(*args, **kwargs)
+self.assert_any_of_elements_visible(*args, **kwargs)
+self.assert_any_of_elements_present(*args, **kwargs)
 
 ############
 

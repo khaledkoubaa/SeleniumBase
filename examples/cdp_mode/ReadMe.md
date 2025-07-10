@@ -65,7 +65,7 @@ Note that `PyAutoGUI` is an optional dependency. If calling a method that uses i
 
 --------
 
-For Cloudflare CAPTCHAs that appear as part of a websites, you may need to use `sb.cdp.gui_click_element(selector)` instead (if the Turnstile wasn't bypassed automatically). Example: ([SeleniumBase/examples/cdp_mode/raw_planetmc.py](https://github.com/seleniumbase/SeleniumBase/blob/master/examples/cdp_mode/raw_planetmc.py))
+For some Cloudflare CAPTCHAs that appear within websites, you may need to use `sb.cdp.gui_click_element(selector)` instead (if the Turnstile wasn't bypassed automatically). Example: ([SeleniumBase/examples/cdp_mode/raw_planetmc.py](https://github.com/seleniumbase/SeleniumBase/blob/master/examples/cdp_mode/raw_planetmc.py))
 
 ```python
 from seleniumbase import SB
@@ -194,19 +194,11 @@ with SB(uc=True, test=True, locale="en", ad_block=True) as sb:
     sb.activate_cdp_mode(url)
     sb.sleep(2.5)
     sb.cdp.click_if_visible('button[aria-label="Close"]')
-    sb.sleep(1)
-    sb.cdp.click('span:contains("Explore")')
-    sb.sleep(1)
-    sb.cdp.click('a:contains("Hotels & Resorts")')
-    sb.sleep(3)
-    location = "Anaheim, CA, USA"
-    sb.cdp.press_keys("input#searchbox", location)
+    sb.cdp.click_if_visible("#onetrust-reject-all-handler")
     sb.sleep(2)
-    sb.cdp.click("div#suggestion-list ul li a")
-    sb.sleep(1)
-    sb.cdp.click('div.hotel-card-footer button')
-    sb.sleep(1)
-    sb.cdp.click('button[data-locator="find-hotels"]')
+    location = "Anaheim, CA, USA"
+    sb.cdp.type('input[data-id="location"]', location)
+    sb.cdp.click("button.quickbookSearchFormButton")
     sb.sleep(5)
     card_info = 'div[data-booking-status="BOOKABLE"] [class*="HotelCard_info"]'
     hotels = sb.cdp.select_all(card_info)
@@ -218,6 +210,7 @@ with SB(uc=True, test=True, locale="en", ad_block=True) as sb:
         info = hotel.text.strip()
         if "Avg/Night" in info and not info.startswith("Rates from"):
             name = info.split("  (")[0].split(" + ")[0].split(" Award Cat")[0]
+            name = name.split(" Rates from :")[0]
             price = "?"
             if "Rates from : " in info:
                 price = info.split("Rates from : ")[1].split(" Avg/Night")[0]
@@ -364,7 +357,7 @@ with SB(uc=True, test=True, locale="en", pls="none") as sb:
 sb.cdp.get(url, **kwargs)
 sb.cdp.open(url, **kwargs)
 sb.cdp.reload(ignore_cache=True, script_to_evaluate_on_load=None)
-sb.cdp.refresh()
+sb.cdp.refresh(*args, **kwargs)
 sb.cdp.get_event_loop()
 sb.cdp.add_handler(event, handler)
 sb.cdp.find_element(selector, best_match=False, timeout=None)
@@ -384,6 +377,9 @@ sb.cdp.go_back()
 sb.cdp.go_forward()
 sb.cdp.get_navigation_history()
 sb.cdp.tile_windows(windows=None, max_columns=0)
+sb.cdp.grant_permissions(permissions, origin=None)
+sb.cdp.grant_all_permissions()
+sb.cdp.reset_permissions()
 sb.cdp.get_all_cookies(*args, **kwargs)
 sb.cdp.set_all_cookies(*args, **kwargs)
 sb.cdp.save_cookies(*args, **kwargs)
@@ -488,6 +484,10 @@ sb.cdp.wait_for_text_not_visible(text, selector="body", timeout=None)
 sb.cdp.wait_for_element_visible(selector, timeout=None)
 sb.cdp.wait_for_element_not_visible(selector, timeout=None)
 sb.cdp.wait_for_element_absent(selector, timeout=None)
+sb.cdp.wait_for_any_of_elements_visible(*args, **kwargs)
+sb.cdp.wait_for_any_of_elements_present(*args, **kwargs)
+sb.cdp.assert_any_of_elements_visible(*args, **kwargs)
+sb.cdp.assert_any_of_elements_present(*args, **kwargs)
 sb.cdp.assert_element(selector, timeout=None)
 sb.cdp.assert_element_visible(selector, timeout=None)
 sb.cdp.assert_element_present(selector, timeout=None)

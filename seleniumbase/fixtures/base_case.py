@@ -132,6 +132,7 @@ class BaseCase(unittest.TestCase):
         self.__called_teardown = False
         self.__start_time_ms = int(time.time() * 1000.0)
         self.__requests_timeout = None
+        self.__page_source_count = 0
         self.__screenshot_count = 0
         self.__logs_data_count = 0
         self.__last_data_file = None
@@ -1910,7 +1911,10 @@ class BaseCase(unittest.TestCase):
             timeout = self.__get_new_timeout(timeout)
         selector, by = self.__recalculate_selector(selector, by)
         if self.__is_cdp_swap_needed():
-            return self.cdp.get_element_attribute(selector, attribute)
+            if hard_fail:
+                return self.cdp.get_element_attribute(selector, attribute)
+            else:
+                return self.cdp.get_attribute(selector, attribute)
         self.wait_for_ready_state_complete()
         time.sleep(0.01)
         if self.__is_shadow_selector(selector):
@@ -3587,7 +3591,7 @@ class BaseCase(unittest.TestCase):
         self.set_window_rect(x, y, width, height)
         self.__demo_mode_pause_if_active(tiny=True)
 
-    def switch_to_frame(self, frame="iframe", timeout=None):
+    def switch_to_frame(self, frame="iframe", timeout=None, invisible=False):
         """Wait for an iframe to appear, and switch to it. This should be
         usable as a drop-in replacement for driver.switch_to.frame().
         The iframe identifier can be a selector, an index, an id, a name,
@@ -3595,7 +3599,8 @@ class BaseCase(unittest.TestCase):
         for visible iframes with a string selector.
         @Params
         frame - the frame element, name, id, index, or selector
-        timeout - the time to wait for the alert in seconds """
+        timeout - the time to wait for the alert in seconds
+        invisible - if True, the iframe can be invisible """
         self.__check_scope()
         if not timeout:
             timeout = settings.LARGE_TIMEOUT
@@ -3645,7 +3650,9 @@ class BaseCase(unittest.TestCase):
             time.sleep(0.035)
             if self.undetectable:
                 time.sleep(0.035)
-        page_actions.switch_to_frame(self.driver, frame, timeout)
+        page_actions.switch_to_frame(
+            self.driver, frame, timeout, invisible=invisible
+        )
         self.wait_for_ready_state_complete()
         if self.__needs_minimum_wait():
             time.sleep(0.015)
@@ -4509,6 +4516,40 @@ class BaseCase(unittest.TestCase):
         sb_config._has_logs = True
         return page_actions.save_screenshot(self.driver, name, test_logpath)
 
+    def save_page_source_to_logs(self, name=None):
+        """Saves the page HTML to the "latest_logs/" folder.
+        Naming is automatic:
+            If NO NAME provided: "_1_source.html", "_2_source.html", etc.
+            If NAME IS provided, then: "_1_name.html", "_2_name.html", etc.
+        (The last_page / failure page_source is always "page_source.html")"""
+        if not self.__is_cdp_swap_needed():
+            self.wait_for_ready_state_complete()
+        test_logpath = os.path.join(self.log_path, self.__get_test_id())
+        self.__create_log_path_as_needed(test_logpath)
+        if name:
+            name = str(name)
+        self.__page_source_count += 1
+        if not name or len(name) == 0:
+            name = "_%s_source.html" % self.__page_source_count
+        else:
+            pre_name = "_%s_" % self.__page_source_count
+            if len(name) >= 4 and name[-4:].lower() == ".html":
+                name = name[:-4]
+                if len(name) == 0:
+                    name = "source"
+            name = "%s%s.html" % (pre_name, name)
+        if self.recorder_mode:
+            url = self.get_current_url()
+            if url and len(url) > 0:
+                if ("http:") in url or ("https:") in url or ("file:") in url:
+                    if self.get_session_storage_item("pause_recorder") == "no":
+                        time_stamp = self.execute_script("return Date.now();")
+                        origin = self.get_origin()
+                        action = ["spstl", "", origin, time_stamp]
+                        self.__extra_actions.append(action)
+        sb_config._has_logs = True
+        return page_actions.save_page_source(self.driver, name, test_logpath)
+
     def save_data_to_logs(self, data, file_name=None):
         """Saves data to the "latest_logs/" data folder of the current test.
         If no file_name, file_name becomes: "data_1.txt", "data_2.txt", etc.
@@ -4592,9 +4633,9 @@ class BaseCase(unittest.TestCase):
         Loads the page cookies from the "saved_cookies" folder.
         Usage for setting expiry:
         If expiry == 0 or False: Delete "expiry".
+        If expiry is True: Set "expiry" to 24 hours in the future.
         If expiry == -1 (or < 0): Do not modify "expiry".
         If expiry > 0: Set "expiry" to expiry minutes in the future.
-        If expiry == True: Set "expiry" to 24 hours in the future.
         """
         cookies = self.get_saved_cookies(name)
         self.wait_for_ready_state_complete()
@@ -4606,12 +4647,12 @@ class BaseCase(unittest.TestCase):
                     cookie["domain"] = trim_origin
             if "expiry" in cookie and (not expiry or expiry == 0):
                 del cookie["expiry"]
+            elif expiry is True:
+                cookie["expiry"] = int(time.time()) + 86400
             elif isinstance(expiry, (int, float)) and expiry < 0:
                 pass
             elif isinstance(expiry, (int, float)) and expiry > 0:
                 cookie["expiry"] = int(time.time()) + int(expiry * 60.0)
-            elif expiry:
-                cookie["expiry"] = int(time.time()) + 86400
             self.driver.add_cookie(cookie)
 
     def delete_all_cookies(self):
@@ -4693,9 +4734,9 @@ class BaseCase(unittest.TestCase):
         self.add_cookie({'name': 'foo', 'value': 'bar', 'sameSite': 'Strict'})
         Usage for setting expiry:
         If expiry == 0 or False: Delete "expiry".
+        If expiry is True: Set "expiry" to 24 hours in the future.
         If expiry == -1 (or < 0): Do not modify "expiry".
         If expiry > 0: Set "expiry" to expiry minutes in the future.
-        If expiry == True: Set "expiry" to 24 hours in the future.
         """
         self.__check_scope()
         self._check_browser()
@@ -4707,21 +4748,21 @@ class BaseCase(unittest.TestCase):
                 cookie["domain"] = trim_origin
         if "expiry" in cookie and (not expiry or expiry == 0):
             del cookie["expiry"]
+        elif expiry is True:
+            cookie["expiry"] = int(time.time()) + 86400
         elif isinstance(expiry, (int, float)) and expiry < 0:
             pass
         elif isinstance(expiry, (int, float)) and expiry > 0:
             cookie["expiry"] = int(time.time()) + int(expiry * 60.0)
-        elif expiry:
-            cookie["expiry"] = int(time.time()) + 86400
         self.driver.add_cookie(cookie_dict)
 
     def add_cookies(self, cookies, expiry=False):
         """
         Usage for setting expiry:
         If expiry == 0 or False: Delete "expiry".
+        If expiry is True: Set "expiry" to 24 hours in the future.
         If expiry == -1 (or < 0): Do not modify "expiry".
         If expiry > 0: Set "expiry" to expiry minutes in the future.
-        If expiry == True: Set "expiry" to 24 hours in the future.
         """
         self.__check_scope()
         self._check_browser()
@@ -4733,12 +4774,12 @@ class BaseCase(unittest.TestCase):
                     cookie["domain"] = trim_origin
             if "expiry" in cookie and (not expiry or expiry == 0):
                 del cookie["expiry"]
+            elif expiry is True:
+                cookie["expiry"] = int(time.time()) + 86400
             elif isinstance(expiry, (int, float)) and expiry < 0:
                 pass
             elif isinstance(expiry, (int, float)) and expiry > 0:
                 cookie["expiry"] = int(time.time()) + int(expiry * 60.0)
-            elif expiry:
-                cookie["expiry"] = int(time.time()) + 86400
             self.driver.add_cookie(cookie)
 
     def __set_esc_skip(self):
@@ -4883,6 +4924,7 @@ class BaseCase(unittest.TestCase):
         self.execute_script(script)
 
     def activate_cdp_mode(self, url=None, **kwargs):
+        """Activate CDP Mode with the URL and kwargs."""
         if hasattr(self.driver, "_is_using_uc") and self.driver._is_using_uc:
             if self.__is_cdp_swap_needed():
                 return  # CDP Mode is already active
@@ -4890,7 +4932,7 @@ class BaseCase(unittest.TestCase):
                 self.driver.connect()
             current_url = self.get_current_url()
             if not current_url.startswith(("about", "data", "chrome")):
-                self.get_new_driver(undetectable=True)
+                self.open("about:blank")
             self.driver.uc_open_with_cdp_mode(url, **kwargs)
         else:
             self.get_new_driver(undetectable=True)
@@ -4898,6 +4940,8 @@ class BaseCase(unittest.TestCase):
         self.cdp = self.driver.cdp
 
     def activate_recorder(self):
+        """Activate Recorder Mode on the current tab/window.
+        For persistent Recorder Mode, use the extension instead."""
         from seleniumbase.js_code.recorder_js import recorder_js
 
         if not self.is_chromium():
@@ -5464,6 +5508,7 @@ class BaseCase(unittest.TestCase):
         ext_actions.append("s_scr")
         ext_actions.append("ss_tf")
         ext_actions.append("ss_tl")
+        ext_actions.append("spstl")
         ext_actions.append("da_el")
         ext_actions.append("da_ep")
         ext_actions.append("da_te")
@@ -7678,10 +7723,13 @@ class BaseCase(unittest.TestCase):
                     break
                 time.sleep(1)
         if not found and not os.path.exists(downloaded_file_path):
+            plural = "s"
+            if timeout == 1:
+                plural = ""
             message = (
                 "File {%s} was not found in the downloads folder {%s} "
-                "after %s seconds! (Or the download didn't complete!)"
-                % (file, df, timeout)
+                "after %s second%s! (Or the download didn't complete!)"
+                % (file, df, timeout, plural)
             )
             page_actions.timeout_exception("NoSuchFileException", message)
         if self.recorder_mode and self.__current_url_is_recordable():
@@ -7735,10 +7783,13 @@ class BaseCase(unittest.TestCase):
                     break
                 time.sleep(1)
         if not found:
+            plural = "s"
+            if timeout == 1:
+                plural = ""
             message = (
                 "Regex {%s} was not found in the downloads folder {%s} "
-                "after %s seconds! (Or the download didn't complete!)"
-                % (regex, df, timeout)
+                "after %s second%s! (Or the download didn't complete!)"
+                % (regex, df, timeout, plural)
             )
             page_actions.timeout_exception("NoSuchFileException", message)
         if self.demo_mode:
@@ -8262,7 +8313,10 @@ class BaseCase(unittest.TestCase):
         In CDP Mode, the CDP-Driver controls the web browser.
         The CDP-Driver can be connected while WebDriver isn't.
         """
-        return self.driver.is_connected()
+        if hasattr(self.driver, "is_connected"):
+            return self.driver.is_connected()
+        else:
+            return True
 
     def is_chromium(self):
         """Return True if the browser is Chrome or Edge."""
@@ -9212,6 +9266,162 @@ class BaseCase(unittest.TestCase):
             original_selector=original_selector,
         )
 
+    def wait_for_any_of_elements_visible(self, *args, **kwargs):
+        """Waits for at least one of the elements to be visible.
+        Returns the first element that is found.
+        The input is a list of elements. (Should be CSS selectors or XPath)
+        Optional kwargs include: "timeout" (used by all selectors).
+        Raises an exception if no elements are visible by the timeout.
+        Allows flexible inputs (Eg. Multiple args or a list of args)
+        Examples:
+            self.wait_for_any_of_elements_visible("h1", "h2", "h3")
+            OR
+            self.wait_for_any_of_elements_visible(["h1", "h2", "h3"]) """
+        self.__check_scope()
+        selectors = []
+        timeout = None
+        for kwarg in kwargs:
+            if kwarg == "timeout":
+                timeout = kwargs["timeout"]
+            elif kwarg == "by":
+                pass  # Autodetected
+            elif kwarg == "selector" or kwarg == "selectors":
+                selector = kwargs[kwarg]
+                if isinstance(selector, str):
+                    selectors.append(selector)
+                elif isinstance(selector, list):
+                    selectors_list = selector
+                    for selector in selectors_list:
+                        if isinstance(selector, str):
+                            selectors.append(selector)
+            else:
+                raise Exception('Unknown kwarg: "%s"!' % kwarg)
+        if not timeout:
+            timeout = settings.LARGE_TIMEOUT
+        if self.timeout_multiplier and timeout == settings.LARGE_TIMEOUT:
+            timeout = self.__get_new_timeout(timeout)
+        for arg in args:
+            if isinstance(arg, list):
+                for selector in arg:
+                    if isinstance(selector, str):
+                        selectors.append(selector)
+            elif isinstance(arg, str):
+                selectors.append(arg)
+        if not selectors:
+            raise Exception("The selectors list was empty!")
+        original_selectors = selectors
+        updated_selectors = []
+        for selector in selectors:
+            by = "css selector"
+            if page_utils.is_xpath_selector(selector):
+                by = "xpath"
+            selector, by = self.__recalculate_selector(selector, by)
+            updated_selectors.append(selector)
+        selectors = updated_selectors
+        if self.__is_cdp_swap_needed():
+            return self.cdp.wait_for_any_of_elements_visible(
+                selectors, timeout=timeout
+            )
+        return page_actions.wait_for_any_of_elements_visible(
+            self.driver,
+            selectors,
+            timeout=timeout,
+            original_selectors=original_selectors,
+        )
+
+    def wait_for_any_of_elements_present(self, *args, **kwargs):
+        """Waits for at least one of the elements to be present.
+        Visibility not required, but element must be in the DOM.
+        Returns the first element that is found.
+        The input is a list of elements. (Should be CSS selectors or XPath)
+        Optional kwargs include: "timeout" (used by all selectors).
+        Raises an exception if no elements are present by the timeout.
+        Allows flexible inputs (Eg. Multiple args or a list of args)
+        Examples:
+            self.wait_for_any_of_elements_present("style", "script")
+            OR
+            self.wait_for_any_of_elements_present(["style", "script"]) """
+        self.__check_scope()
+        selectors = []
+        timeout = None
+        for kwarg in kwargs:
+            if kwarg == "timeout":
+                timeout = kwargs["timeout"]
+            elif kwarg == "by":
+                pass  # Autodetected
+            elif kwarg == "selector" or kwarg == "selectors":
+                selector = kwargs[kwarg]
+                if isinstance(selector, str):
+                    selectors.append(selector)
+                elif isinstance(selector, list):
+                    selectors_list = selector
+                    for selector in selectors_list:
+                        if isinstance(selector, str):
+                            selectors.append(selector)
+            else:
+                raise Exception('Unknown kwarg: "%s"!' % kwarg)
+        if not timeout:
+            timeout = settings.LARGE_TIMEOUT
+        if self.timeout_multiplier and timeout == settings.LARGE_TIMEOUT:
+            timeout = self.__get_new_timeout(timeout)
+        for arg in args:
+            if isinstance(arg, list):
+                for selector in arg:
+                    if isinstance(selector, str):
+                        selectors.append(selector)
+            elif isinstance(arg, str):
+                selectors.append(arg)
+        if not selectors:
+            raise Exception("The selectors list was empty!")
+        original_selectors = selectors
+        updated_selectors = []
+        for selector in selectors:
+            by = "css selector"
+            if page_utils.is_xpath_selector(selector):
+                by = "xpath"
+            selector, by = self.__recalculate_selector(selector, by)
+            updated_selectors.append(selector)
+        selectors = updated_selectors
+        if self.__is_cdp_swap_needed():
+            return self.cdp.wait_for_any_of_elements_present(
+                selectors, timeout=timeout
+            )
+        return page_actions.wait_for_any_of_elements_present(
+            self.driver,
+            selectors,
+            timeout=timeout,
+            original_selectors=original_selectors,
+        )
+
+    def assert_any_of_elements_visible(self, *args, **kwargs):
+        """Similar to wait_for_any_of_elements_visible(), but returns nothing.
+        As above, raises an exception if none of the set elements are visible.
+        Returns True if successful. Default timeout = SMALL_TIMEOUT.
+        Allows flexible inputs (Eg. Multiple args or a list of args)
+        Examples:
+            self.assert_any_of_elements_visible("h1", "h2", "h3")
+            OR
+            self.assert_any_of_elements_visible(["h1", "h2", "h3"]) """
+        if "timeout" not in kwargs:
+            kwargs["timeout"] = settings.SMALL_TIMEOUT
+        self.wait_for_any_of_elements_visible(*args, **kwargs)
+        return True
+
+    def assert_any_of_elements_present(self, *args, **kwargs):
+        """Similar to wait_for_any_of_elements_present(), but returns nothing.
+        As above, raises an exception if none of the given elements are found.
+        Visibility is not required, but element must exist in the DOM.
+        Returns True if successful. Default timeout = SMALL_TIMEOUT.
+        Allows flexible inputs (Eg. Multiple args or a list of args)
+        Examples:
+            self.assert_any_of_elements_present("h1", "h2", "h3")
+            OR
+            self.assert_any_of_elements_present(["h1", "h2", "h3"]) """
+        if "timeout" not in kwargs:
+            kwargs["timeout"] = settings.SMALL_TIMEOUT
+        self.wait_for_any_of_elements_present(*args, **kwargs)
+        return True
+
     def select_all(self, selector, by="css selector", limit=0):
         return self.find_elements(selector, by=by, limit=limit)
 
@@ -9683,6 +9893,7 @@ class BaseCase(unittest.TestCase):
         The input is a list of elements.
         Optional kwargs include "by" and "timeout" (used by all selectors).
         Raises an exception if any of the elements are not visible.
+        Allows flexible inputs (Eg. Multiple args or a list of args)
         Examples:
             self.assert_elements_present("head", "style", "script", "body")
             OR
@@ -9696,7 +9907,7 @@ class BaseCase(unittest.TestCase):
                 timeout = kwargs["timeout"]
             elif kwarg == "by":
                 by = kwargs["by"]
-            elif kwarg == "selector":
+            elif kwarg == "selector" or kwarg == "selectors":
                 selector = kwargs["selector"]
                 if isinstance(selector, str):
                     selectors.append(selector)
@@ -9789,6 +10000,7 @@ class BaseCase(unittest.TestCase):
         The input is a list of elements.
         Optional kwargs include "by" and "timeout" (used by all selectors).
         Raises an exception if any of the elements are not visible.
+        Allows flexible inputs (Eg. Multiple args or a list of args)
         Examples:
             self.assert_elements("h1", "h2", "h3")
             OR
@@ -9802,7 +10014,7 @@ class BaseCase(unittest.TestCase):
                 timeout = kwargs["timeout"]
             elif kwarg == "by":
                 by = kwargs["by"]
-            elif kwarg == "selector":
+            elif kwarg == "selector" or kwarg == "selectors":
                 selector = kwargs["selector"]
                 if isinstance(selector, str):
                     selectors.append(selector)
@@ -10035,12 +10247,14 @@ class BaseCase(unittest.TestCase):
         elif self.__is_cdp_swap_needed():
             self.cdp.assert_text(text, selector, timeout=timeout)
             return True
-        elif not self.is_connected():
-            self.connect()
         elif self.__is_shadow_selector(selector):
+            if hasattr(self, "connect") and not self.is_connected():
+                self.connect()
             self.__assert_shadow_text_visible(text, selector, timeout)
             return True
         else:
+            if hasattr(self, "connect") and not self.is_connected():
+                self.connect()
             self.wait_for_text_visible(text, selector, by=by, timeout=timeout)
             if self.demo_mode:
                 a_t = "ASSERT TEXT"
@@ -10174,9 +10388,13 @@ class BaseCase(unittest.TestCase):
                 if now_ms >= stop_ms:
                     break
                 time.sleep(0.2)
-        message = "Link text {%s} was not found after %s seconds!" % (
+        plural = "s"
+        if timeout == 1:
+            plural = ""
+        message = "Link text {%s} was not found after %s second%s!" % (
             link_text,
             timeout,
+            plural,
         )
         page_actions.timeout_exception("LinkTextNotFoundException", message)
 
@@ -10199,9 +10417,12 @@ class BaseCase(unittest.TestCase):
                 if now_ms >= stop_ms:
                     break
                 time.sleep(0.2)
+        plural = "s"
+        if timeout == 1:
+            plural = ""
         message = (
-            "Partial Link text {%s} was not found after %s seconds!"
-            "" % (link_text, timeout)
+            "Partial Link text {%s} was not found after %s second%s!"
+            "" % (link_text, timeout, plural)
         )
         page_actions.timeout_exception("LinkTextNotFoundException", message)
 
@@ -14140,7 +14361,13 @@ class BaseCase(unittest.TestCase):
                     backend="xvfb",
                     use_xauth=True,
                 )
+                if "--debug-display" in sys.argv:
+                    print(
+                        "Starting VDisplay from base_case: (%s, %s)"
+                        % (self._xvfb_width, self._xvfb_height)
+                    )
                 self._xvfb_display.start()
+                sb_config._virtual_display = self._xvfb_display
                 if "DISPLAY" not in os.environ.keys():
                     print(
                         "\nX11 display failed! Will use regular xvfb!"
@@ -14409,9 +14636,12 @@ class BaseCase(unittest.TestCase):
                 if must_be_visible and is_present:
                     error = "not visible"
                     the_exception = "ElementNotVisibleException"
+                plural = "s"
+                if timeout == 1:
+                    plural = ""
                 msg = (
-                    "Shadow DOM Element {%s} was %s after %s seconds!"
-                    % (selector_chain, error, timeout)
+                    "Shadow DOM Element {%s} was %s after %s second%s!"
+                    % (selector_chain, error, timeout, plural)
                 )
                 page_actions.timeout_exception(the_exception, msg)
         return element
@@ -16714,7 +16944,11 @@ class BaseCase(unittest.TestCase):
                     self._last_page_url = "(Error: Unknown URL)"
             if hasattr(self, "is_behave") and self.is_behave and has_exception:
                 if hasattr(sb_config, "pdb_option") and sb_config.pdb_option:
-                    self.__activate_behave_post_mortem_debug_mode()
+                    if (
+                        hasattr(sb_config, "behave_step")
+                        and hasattr(sb_config.behave_step, "exc_traceback")
+                    ):
+                        self.__activate_behave_post_mortem_debug_mode()
             if self._final_debug:
                 self.__activate_debug_mode_in_teardown()
             elif (

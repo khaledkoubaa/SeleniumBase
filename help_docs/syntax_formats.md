@@ -731,7 +731,7 @@ class MiClaseDePrueba(CasoDePrueba):
 
 With [Behave's BDD Gherkin format](https://behave.readthedocs.io/en/stable/gherkin.html), you can use natural language to write tests that work with SeleniumBase methods. Behave tests are run by calling ``behave`` on the command-line. This requires some special files in a specific directory structure. Here's an example of that structure:
 
-```bash
+```zsh
 features/
 ├── __init__.py
 ├── behave.ini
@@ -1033,6 +1033,7 @@ async def main():
     time.sleep(1)
     await element.send_keys_async("Boston")
     time.sleep(2)
+    driver.stop()
 
 if __name__ == "__main__":
     loop = asyncio.new_event_loop()
@@ -1075,6 +1076,7 @@ def main():
     cards = sb.select_all('span[data-automation*="product-list-card"]')
     for card in cards:
         print("* %s" % card.text)
+    sb.driver.stop()
 
 
 if __name__ == "__main__":
