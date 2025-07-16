@@ -46,3 +46,5 @@ sb.assert_text("Welcome!", "h1")
 Just like with the `Driver` class, the browser will remain open after the script finishes because we are not using a context manager. To close the browser, you would call `sb.driver.stop()`.
 
 You can find runnable examples of both of these methods in the `cdp_without_context_manager.py` file.
+
+For a more advanced example of how to create a helper function to manage the `SB` object, see this GitHub issue: https://github.com/seleniumbase/SeleniumBase/issues/3482
